@@ -57,7 +57,7 @@ Users see “invite Alice” and “slide to join”, not a workshop on output d
 
 ## Transport
 
-Each application JSON below is the **rumor `content`** (kind **14**). Clients wrap it:
+Each application JSON in [`types/`](./types/) is the **rumor `content`** (kind **14**). Clients wrap it:
 
 1. Kind **13** seal (NIP-44, sender nsec → recipient pubkey)
 2. Kind **1059** gift wrap (ephemeral key, tag `["p", recipientHex]`)
@@ -83,82 +83,13 @@ Clients MUST verify BIP-32 **depth and child index** of an xpub. A descriptor or
 
 ---
 
-## Message types — wallet creation
+## Message types
 
-`version` is `1` for all messages in this document.
+Wire payloads live in [`types/`](./types/). One file per `type` string; `version` is `1` for all of them.
 
-### `edge-multisig-invite`
+**Wallet creation:** [`invite`](./types/edge-multisig-invite.md), [`accept`](./types/edge-multisig-accept.md), [`complete`](./types/edge-multisig-complete.md)
 
-Initiator → each invitee (encrypted separately).
-
-```json
-{
-  "type": "edge-multisig-invite",
-  "version": 1,
-  "proposalId": "18f3c2a1b4e90c7d",
-  "walletName": "Family 2-of-3",
-  "requiredSignatures": 2,
-  "totalCosigners": 3,
-  "initiatorNpub": "npub1…",
-  "initiatorXpub": "xpub6…",
-  "cosignerNpubs": [
-    "npub1invitee-a…",
-    "npub1invitee-b…"
-  ]
-}
-```
-
-`cosignerNpubs` is the other signers (not including the initiator). `totalCosigners` = initiator + `cosignerNpubs.length`.
-
-### `edge-multisig-accept`
-
-Invitee → initiator and the other npubs in the set.
-
-```json
-{
-  "type": "edge-multisig-accept",
-  "version": 1,
-  "proposalId": "18f3c2a1b4e90c7d",
-  "npub": "npub1invitee-a…",
-  "xpub": "xpub6…"
-}
-```
-
-`xpub` is **this device’s** BIP-48 account key, derived from **this user’s** Bitcoin seed — never copied from the invite.
-
-### `edge-multisig-complete`
-
-Initiator → all other npubs once every slot has an xpub.
-
-```json
-{
-  "type": "edge-multisig-complete",
-  "version": 1,
-  "proposalId": "18f3c2a1b4e90c7d",
-  "cosigners": [
-    {
-      "npub": "npub1initiator…",
-      "xpub": "xpub6…",
-      "status": "local",
-      "parentFingerprint": "aabbccdd"
-    },
-    {
-      "npub": "npub1invitee-a…",
-      "xpub": "xpub6…",
-      "status": "accepted",
-      "parentFingerprint": "11223344"
-    },
-    {
-      "npub": "npub1invitee-b…",
-      "xpub": "xpub6…",
-      "status": "accepted",
-      "parentFingerprint": "55667788"
-    }
-  ]
-}
-```
-
-Clients independently derive `wsh(sortedmulti(m, [fp/48'/0'/0'/2']xpub/<0;1>/*, …))` (BIP-380, BIP-67). They MUST NOT trust a P2WSH address shipped in the complete message as the sole source of truth (Edge currently omits the address from this JSON and derives it).
+**Spend:** [`request`](./types/edge-multisig-spend-request.md), [`partial`](./types/edge-multisig-spend-partial.md), [`reject`](./types/edge-multisig-spend-reject.md), [`complete`](./types/edge-multisig-spend-complete.md)
 
 ---
 
@@ -192,91 +123,6 @@ sequenceDiagram
 
 ---
 
-## Message types — spend
-
-Same transport. PSBT is base64 in JSON (still inside NIP-44). Relays do not see the unsigned tx.
-
-### `edge-multisig-spend-request`
-
-Spend initiator → other cosigners.
-
-```json
-{
-  "type": "edge-multisig-spend-request",
-  "version": 1,
-  "spendId": "spend-1",
-  "walletProposalId": "18f3c2a1b4e90c7d",
-  "requiredSignatures": 2,
-  "totalCosigners": 3,
-  "psbtBase64": "cHNidP8…",
-  "amountNative": "10000",
-  "destAddress": "bc1q…",
-  "feeNative": "500",
-  "initiatorNpub": "npub1…",
-  "signers": [
-    { "npub": "npub1a…", "status": "signed" },
-    { "npub": "npub1b…", "status": "pending" },
-    { "npub": "npub1c…", "status": "pending" }
-  ]
-}
-```
-
-### `edge-multisig-spend-partial`
-
-A cosigner who added their signature.
-
-```json
-{
-  "type": "edge-multisig-spend-partial",
-  "version": 1,
-  "spendId": "spend-1",
-  "walletProposalId": "18f3c2a1b4e90c7d",
-  "npub": "npub1b…",
-  "psbtBase64": "cHNidP8…",
-  "signers": [
-    { "npub": "npub1a…", "status": "signed" },
-    { "npub": "npub1b…", "status": "signed" },
-    { "npub": "npub1c…", "status": "pending" }
-  ]
-}
-```
-
-### `edge-multisig-spend-reject`
-
-```json
-{
-  "type": "edge-multisig-spend-reject",
-  "version": 1,
-  "spendId": "spend-1",
-  "walletProposalId": "18f3c2a1b4e90c7d",
-  "npub": "npub1c…"
-}
-```
-
-### `edge-multisig-spend-complete`
-
-After broadcast (txid is Bitcoin).
-
-```json
-{
-  "type": "edge-multisig-spend-complete",
-  "version": 1,
-  "spendId": "spend-1",
-  "walletProposalId": "18f3c2a1b4e90c7d",
-  "txid": "abc…",
-  "psbtBase64": "cHNidP8…",
-  "signers": [
-    { "npub": "npub1a…", "status": "signed" },
-    { "npub": "npub1b…", "status": "signed" },
-    { "npub": "npub1c…", "status": "pending" }
-  ]
-}
-```
-
-Clients MUST re-verify the PSBT against the known descriptor (amount, destination, change, prevouts) before signing. Status arrays in JSON are hints; the PSBT signatures are authoritative.
-
----
-
 ## What never goes on Nostr
 
 - BIP-39 mnemonic / `bitcoinKey`
@@ -292,7 +138,7 @@ NIP-05 identifiers are **not** required on the wire. Resolve to npub first.
 
 A second wallet can interoperate if it:
 
-1. Uses the same `type` strings and JSON fields (cleaners in Edge: `src/util/multisig/types.ts`).
+1. Uses the same `type` strings and JSON fields ([`types/`](./types/); cleaners in Edge: `src/util/multisig/types.ts`).
 2. Gift-wraps with NIP-17.
 3. Derives native P2WSH from the collected xpubs with BIP-67 and the same derivation path.
 4. Refuses to treat a depth-3 xpub as BIP-48 just because a descriptor origin says `48'`.
